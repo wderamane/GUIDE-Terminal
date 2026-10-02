@@ -1,5 +1,25 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Configuration Supabase
+
+Le dashboard utilise Supabase pour l’authentification et le stockage des tâches, snippets et conversations.
+
+1. Crée un projet sur [Supabase](https://supabase.com/dashboard).
+2. Copie `.env.example` vers `.env.local`, puis renseigne l’URL du projet et sa clé **publishable** depuis les paramètres API.
+3. Ouvre le SQL Editor du projet et exécute le contenu de `supabase/schema.sql`. Cela crée les profils, les tables du dashboard et les règles RLS qui isolent les données de chaque compte.
+4. Redémarre l’application avec `npm run dev`, puis crée ton compte depuis `/login`.
+5. Pour donner le rôle administrateur à ton compte, remplace `REPLACE_WITH_YOUR_ACCOUNT_EMAIL` dans `supabase/promote-admin.sql` par l’adresse utilisée à l’inscription, puis exécute ce script dans le SQL Editor. Le rôle sera visible dans l’en-tête du dashboard.
+
+Supabase Auth conserve les identifiants et les mots de passe. La table `profiles` contient uniquement les informations de profil. N’utilise jamais une clé `service_role` dans le navigateur ou dans `NEXT_PUBLIC_*`.
+
+## Assistant local avec Ollama
+
+Installe Ollama et télécharge le modèle avec `ollama pull llama3.2`. Le service local doit rester lancé pendant l’utilisation du chat. Aucun compte fournisseur ni clé API n’est nécessaire.
+
+L’API vérifie la session Supabase côté serveur, puis transmet au modèle au plus 10 messages récents. Les messages sont limités à 1 500 caractères et la réponse à 512 tokens. Le compteur affiché dans le chat est l’usage local estimé par Ollama, pas une facturation.
+
+Par défaut, l’application contacte Ollama à `http://127.0.0.1:11434`. Si ton serveur Ollama tourne sur une autre adresse, définis `OLLAMA_BASE_URL` dans `.env.local` et redémarre Next.js.
+
 ## Getting Started
 
 First, run the development server:
