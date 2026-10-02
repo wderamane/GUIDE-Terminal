@@ -47,6 +47,12 @@ interface TokenUsage {
     outputTokens: number;
 }
 
+interface PendingAction {
+    id: string;
+    name: 'write_local_file' | 'run_local_command';
+    arguments: Record<string, unknown>;
+}
+
 export default function GuideTerminalDashboard() {
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<'terminal' | 'tasks' | 'snippets'>('terminal');
@@ -59,6 +65,8 @@ export default function GuideTerminalDashboard() {
     const [chatInput, setChatInput] = useState('');
     const [sendingMessage, setSendingMessage] = useState(false);
     const [lastTokenUsage, setLastTokenUsage] = useState<TokenUsage | null>(null);
+    const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+    const [approvingAction, setApprovingAction] = useState(false);
     const [userRole, setUserRole] = useState<'user' | 'admin'>('user');
     const [authReady, setAuthReady] = useState(() => !(
         process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
@@ -187,6 +195,12 @@ export default function GuideTerminalDashboard() {
         e.preventDefault();
         const userMsg = chatInput.trim();
         if (!userMsg || sendingMessage) return;
+        const isLocalCommand = userMsg.startsWith('!');
+        const directCommand = isLocalCommand ? userMsg.slice(1).trim() : undefined;
+        if (isLocalCommand && (!directCommand || directCommand.length > 1000)) {
+            setAppError('Après !, écris une commande PowerShell de 1 à 1000 caractères.');
+            return;
+        }
 
         setChatInput('');
         setSendingMessage(true);
@@ -210,16 +224,17 @@ export default function GuideTerminalDashboard() {
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: userMsg }),
+                body: JSON.stringify({ message: userMsg, ...(directCommand ? { directCommand } : {}) }),
             });
             const payload = await response.json() as {
                 text?: unknown;
                 error?: unknown;
                 usage?: TokenUsage;
+                pendingAction?: PendingAction;
             };
 
             if (!response.ok || typeof payload.text !== 'string') {
-                setAppError(typeof payload.error === 'string' ? payload.error : 'Claude n’a pas pu répondre. Réessaie.');
+                setAppError(typeof payload.error === 'string' ? payload.error : 'G.U.I.D.E n’a pas pu répondre. Réessaie.');
                 return;
             }
 
@@ -235,10 +250,55 @@ export default function GuideTerminalDashboard() {
 
             setMessages(current => [...current, savedGuideMessage as Message]);
             setLastTokenUsage(payload.usage ?? null);
+            setPendingAction(payload.pendingAction ?? null);
             setAppError('');
         } catch {
-            setAppError('Impossible de contacter Claude. Vérifie la connexion puis réessaie.');
+            setAppError('Impossible de contacter G.U.I.D.E. Vérifie les services locaux puis réessaie.');
         } finally {
+            setSendingMessage(false);
+        }
+    };
+
+    const resolvePendingAction = async (approved: boolean) => {
+        if (!pendingAction || approvingAction) return;
+        const approvalId = pendingAction.id;
+        setPendingAction(null);
+        setApprovingAction(true);
+        setSendingMessage(true);
+
+        try {
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ approvalId, approved }),
+            });
+            const payload = await response.json() as {
+                text?: unknown;
+                error?: unknown;
+                usage?: TokenUsage;
+            };
+            if (!response.ok || typeof payload.text !== 'string') {
+                setAppError(typeof payload.error === 'string' ? payload.error : 'La confirmation n’a pas abouti.');
+                return;
+            }
+
+            const { data: savedGuideMessage, error: guideMessageError } = await createClient()
+                .from('messages')
+                .insert({ sender: 'guide', text: payload.text })
+                .select('id, sender, text')
+                .single();
+            if (guideMessageError) {
+                setAppError(`Résultat reçu, mais non enregistré : ${guideMessageError.message}`);
+                return;
+            }
+
+            setMessages(current => [...current, savedGuideMessage as Message]);
+            setLastTokenUsage(payload.usage ?? null);
+            setAppError('');
+        } catch {
+            setAppError('Impossible de joindre le compagnon local. Vérifie ses services puis réessaie.');
+        } finally {
+            setApprovingAction(false);
             setSendingMessage(false);
         }
     };
@@ -263,7 +323,7 @@ export default function GuideTerminalDashboard() {
                 {/* En-tête du terminal */}
                 <header className="border-b-2 border-[#00ff66] pb-2 mb-4 flex justify-between items-center text-sm">
                     <div className="font-bold tracking-widest [text-shadow:0_0_5px_rgba(0,255,102,0.8)]">
-                        KURO TERMINAL // G.U.I.D.E v1.0
+                        G.U.I.D.E
                     </div>
                     <div className="flex flex-wrap gap-3 items-center justify-end">
                         <div className="flex gap-2">
@@ -285,7 +345,6 @@ export default function GuideTerminalDashboard() {
                         </div>
                         <button onClick={() => router.push('/account')} className="border border-[#00ff66] px-2 py-0.5 text-xs hover:bg-[#00ff66] hover:text-black">COMPTE</button>
                         {userRole === 'admin' && <span className="border border-[#00ff66] px-2 py-0.5 text-[10px] font-bold tracking-widest">ADMIN</span>}
-                        <button onClick={signOut} className="border border-[#00ff66] px-2 py-0.5 text-xs hover:bg-[#00ff66] hover:text-black">QUITTER</button>
                     </div>
                 </header>
 
@@ -300,9 +359,7 @@ export default function GuideTerminalDashboard() {
                             <div className="flex min-h-0 flex-col items-center justify-center border-b border-[#00ff66] pb-3 md:border-b-0 md:border-r md:pb-0 md:pr-3">
                                 <div style={{ height: 'min(55vh, 384px)' }} className="relative mb-2 w-full max-w-59 overflow-hidden border border-[#00ff66] bg-black/60">
                                     <Image src="/Guide.png" alt="G.U.I.D.E" width={236} height={384} loading="eager" className="h-full w-full object-contain" />
-                                    <div className="text-center text-xs font-bold [text-shadow:0_0_5px_rgba(0,255,102,0.8)] p-1">
-                                      
-                                    </div>
+
                                 </div>
                                 <span className="text-xs tracking-widest font-bold">G.U.I.D.E</span>
                             </div>
@@ -323,25 +380,51 @@ export default function GuideTerminalDashboard() {
                             </div>
                         </div>
 
+                        {pendingAction && (
+                            <section className="border-2 border-[#ffcc33] bg-black/80 p-3 text-xs text-[#ffe28a]" aria-label="Approbation d’une action locale">
+                                <p className="mb-2 font-bold tracking-widest">APPROBATION LOCALE REQUISE</p>
+                                {pendingAction.name === 'run_local_command' ? (
+                                    <>
+                                        <p className="mb-1">Commande proposée</p>
+                                        <pre className="max-h-28 overflow-auto whitespace-pre-wrap break-all border border-[#ffcc33]/50 bg-black p-2">{String(pendingAction.arguments.command ?? '')}</pre>
+                                        <p className="mt-2">Cette commande s’exécute avec les droits de ton compte Windows.</p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p className="mb-1">Écriture proposée : {String(pendingAction.arguments.path ?? '')}</p>
+                                        <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-all border border-[#ffcc33]/50 bg-black p-2">{String(pendingAction.arguments.content ?? '')}</pre>
+                                    </>
+                                )}
+                                <div className="mt-3 flex flex-wrap justify-end gap-2">
+                                    <button type="button" onClick={() => void resolvePendingAction(false)} disabled={approvingAction} className="border border-[#ffcc33] px-3 py-2 font-bold hover:bg-[#ffcc33]/15 disabled:opacity-50">
+                                        REFUSER
+                                    </button>
+                                    <button type="button" onClick={() => void resolvePendingAction(true)} disabled={approvingAction} className="border border-[#ffcc33] bg-[#ffcc33] px-3 py-2 font-bold text-black hover:bg-[#ffe28a] disabled:opacity-50">
+                                        {approvingAction ? 'TRAITEMENT...' : pendingAction.name === 'run_local_command' ? 'APPROUVER ET EXÉCUTER' : 'APPROUVER L’ÉCRITURE'}
+                                    </button>
+                                </div>
+                            </section>
+                        )}
+
                         {/* Input de discussion en bas */}
                         <form onSubmit={handleChatSubmit} className="flex gap-2 mt-auto">
                             <input
                                 type="text"
                                 value={chatInput}
                                 onChange={(e) => setChatInput(e.target.value)}
-                                placeholder="Parler à G.U.I.D.E..."
+                                placeholder="Message à G.U.I.D.E... ou !Get-Location"
                                 maxLength={1500}
-                                disabled={sendingMessage}
+                                disabled={sendingMessage || Boolean(pendingAction)}
                                 className="flex-1 bg-black border-2 border-[#00ff66] text-[#00ff66] p-2.5 font-mono outline-none text-sm placeholder-[#00ff66]/40"
                                 autoFocus
                             />
-                            <button type="submit" disabled={sendingMessage || !chatInput.trim()} className="bg-[#012601] border-2 border-[#00ff66] text-[#00ff66] px-6 font-bold hover:bg-[#00ff66] hover:text-black transition-colors cursor-pointer text-sm disabled:cursor-wait disabled:opacity-50">
+                            <button type="submit" disabled={sendingMessage || Boolean(pendingAction) || !chatInput.trim()} className="bg-[#012601] border-2 border-[#00ff66] text-[#00ff66] px-6 font-bold hover:bg-[#00ff66] hover:text-black transition-colors cursor-pointer text-sm disabled:cursor-wait disabled:opacity-50">
                                 {sendingMessage ? 'RÉFLEXION...' : 'TRANSMETTRE'}
                             </button>
                         </form>
                         {lastTokenUsage && (
                             <p className="text-right text-[10px] text-[#00ff66]/55">
-                                Claude · {lastTokenUsage.inputTokens} tokens entrée · {lastTokenUsage.outputTokens} tokens sortie
+                                Ollama · {lastTokenUsage.inputTokens} tokens entrée · {lastTokenUsage.outputTokens} tokens sortie
                             </p>
                         )}
                     </div>

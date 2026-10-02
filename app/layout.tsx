@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Kuro Terminal | G.U.I.D.E",
+  title: "G.U.I.D.E",
   description: "Terminal personnel de Kuro Studio",
 };
 

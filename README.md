@@ -20,18 +20,26 @@ L’API vérifie la session Supabase côté serveur, puis transmet au modèle au
 
 Par défaut, l’application contacte Ollama à `http://127.0.0.1:11434`. Si ton serveur Ollama tourne sur une autre adresse, définis `OLLAMA_BASE_URL` dans `.env.local` et redémarre Next.js.
 
+## Recherche web et accès local contrôlé
+
+La recherche web utilise DuckDuckGo, sans compte ni clé API. Aucun fournisseur de recherche payant n’est appelé. DuckDuckGo peut toutefois limiter les requêtes ou être temporairement indisponible. Ollama et le modèle téléchargé tournent aussi localement; leur utilisation n’appelle pas d’API de modèle payante.
+
+Le compagnon local donne à G.U.I.D.E accès uniquement au dossier configuré par `LOCAL_AGENT_ROOT`. Par défaut, il utilise le dossier personnel de l’utilisateur (`HOME` / `USERPROFILE`) pour autoriser les fichiers personnels sans toucher au système. Tu peux aussi forcer un chemin absolu vers un dossier précis, par exemple `Documents` ou un dossier de projet. Les dossiers Windows, `AppData`, les secrets et les fichiers système restent bloqués.
+
+Dans un deuxième terminal, lance `npm run agent` et laisse ce processus ouvert; le jeton local est créé automatiquement dans `.local-agent-token`, un fichier ignoré par Git.
+
+G.U.I.D.E peut lire et rechercher dans ce dossier, puis consulter le web. Pour modifier un fichier ou lancer une commande, le chat affiche l’action exacte et attend ta confirmation. Les commandes s’exécutent avec les droits de ton compte Windows et ne sont pas isolées du reste du PC; relis-les attentivement avant de les approuver. Le tableau de bord et le compagnon écoutent uniquement sur `127.0.0.1`.
+
+Pour envoyer directement une commande PowerShell au compagnon, commence le message par `!`, par exemple `! Get-Location` ou `! Get-ChildItem`. La commande exacte sera affichée pour approbation; après exécution, son résultat sera transmis à G.U.I.D.E pour qu’il te l’explique. Un message sans `!` reste une discussion normale avec le modèle.
+
 ## Getting Started
 
-First, run the development server:
+Lance le compagnon local dans un terminal, puis le serveur web dans un autre:
 
 ```bash
+npm run agent
+# dans un second terminal
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
